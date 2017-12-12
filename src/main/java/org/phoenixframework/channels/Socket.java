@@ -42,7 +42,7 @@ public class Socket {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final OkHttpClient httpClient = new OkHttpClient();
+    private final OkHttpClient httpClient;
     private Map<String, String> headers;
     private WebSocket webSocket = null;
 
@@ -138,10 +138,9 @@ public class Socket {
                     triggerChannelError();
                     callback.onError(e.toString());
                 }
-            }
-            finally {
+            } finally {
                 // Assume closed on failure
-                if(Socket.this.webSocket != null) {
+                if (Socket.this.webSocket != null) {
                     try {
                         Socket.this.webSocket.close(1001 /*CLOSE_GOING_AWAY*/, "EOF received");
                     } catch (IOException ioe) {
@@ -166,18 +165,17 @@ public class Socket {
         }
     }
 
-    private void startHeartbeatTimer(){
+    private void startHeartbeatTimer() {
         Socket.this.heartbeatTimerTask = new TimerTask() {
             @Override
             public void run() {
                 LOG.log(Level.FINE, "heartbeatTimerTask run");
-                if(Socket.this.isConnected()) {
+                if (Socket.this.isConnected()) {
                     try {
                         Envelope envelope = new Envelope("phoenix", "heartbeat",
-                        new ObjectNode(JsonNodeFactory.instance), Socket.this.makeRef(), null);
+                                new ObjectNode(JsonNodeFactory.instance), Socket.this.makeRef(), null);
                         Socket.this.push(envelope);
-                    }
-                    catch (Exception e) {
+                    } catch (Exception e) {
                         LOG.log(Level.SEVERE, "Failed to send heartbeat", e);
                     }
                 }
@@ -187,7 +185,7 @@ public class Socket {
         timer.schedule(Socket.this.heartbeatTimerTask, Socket.this.heartbeatInterval, Socket.this.heartbeatInterval);
     }
 
-    private void cancelHeartbeatTimer(){
+    private void cancelHeartbeatTimer() {
         if (Socket.this.heartbeatTimerTask != null) {
             Socket.this.heartbeatTimerTask.cancel();
         }
@@ -220,25 +218,25 @@ public class Socket {
         }
     }
 
-    public Socket(final String endpointUri, Map<String, String> headers) throws IOException {
-        this(endpointUri);
+    public Socket(final String endpointUri, Map<String, String> headers, OkHttpClient okHttpClient, final int heartbeatIntervalInMs) throws IOException {
+        this.endpointUri = endpointUri;
         this.headers = headers;
+        this.httpClient = okHttpClient;
+        this.heartbeatInterval = heartbeatIntervalInMs;
+        this.timer = new Timer("Reconnect Timer for " + endpointUri);
+    }
+
+    public Socket(final String endpointUri, Map<String, String> headers, OkHttpClient okHttpClient) throws IOException {
+        this(endpointUri, headers, okHttpClient, DEFAULT_HEARTBEAT_INTERVAL);
+
+    }
+
+    public Socket(final String endpointUri, Map<String, String> headers) throws IOException {
+        this(endpointUri, headers, new OkHttpClient());
     }
 
     public Socket(final String endpointUri) throws IOException {
-        this(endpointUri, DEFAULT_HEARTBEAT_INTERVAL);
-    }
-
-    public Socket(final String endpointUri, final int heartbeatIntervalInMs, Map<String, String> headers) throws IOException {
-        this(endpointUri, heartbeatIntervalInMs);
-        this.headers = headers;
-    }
-
-    public Socket(final String endpointUri, final int heartbeatIntervalInMs) throws IOException {
-        LOG.log(Level.FINE, "PhoenixSocket({0})", endpointUri);
-        this.endpointUri = endpointUri;
-        this.heartbeatInterval = heartbeatIntervalInMs;
-        this.timer = new Timer("Reconnect Timer for " + endpointUri);
+        this(endpointUri, Collections.<String, String>emptyMap());
     }
 
     public void disconnect() throws IOException {
@@ -329,8 +327,7 @@ public class Socket {
         if (this.isConnected()) {
             try {
                 webSocket.sendMessage(body);
-            }
-            catch(IllegalStateException e) {
+            } catch (IllegalStateException e) {
                 LOG.log(Level.SEVERE, "Attempted to send push when socket is not open", e);
             }
         } else {
@@ -397,6 +394,7 @@ public class Socket {
 
     /**
      * Should the socket attempt to reconnect if websocket.onFailure is called.
+     *
      * @param reconnectOnFailure reconnect value
      */
     public void reconectOnFailure(final boolean reconnectOnFailure) {
